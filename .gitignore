@@ -1,0 +1,19 @@
+# Clés API - NE JAMAIS PUBLIER
+backend/.env
+.env
+
+# Fichiers vidéo uploadés
+backend/storage/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+backend/data/
+
+# Node
+frontend/node_modules/
+frontend/.next/
+
+# Système
+.DS_Store
