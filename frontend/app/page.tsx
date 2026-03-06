@@ -39,7 +39,7 @@ export default function HomePage() {
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch(`${API}/api/projects`);
+      const res = await fetch(`${API}/api/projects/`);
       const data = await res.json();
       setProjects(data.projects || []);
     } catch (e) {
@@ -59,7 +59,7 @@ export default function HomePage() {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch(`${API}/api/projects`, {
+      const res = await fetch(`${API}/api/projects/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim() }),

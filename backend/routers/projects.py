@@ -8,14 +8,14 @@ from database import save_project, load_project, list_projects, delete_project
 router = APIRouter()
 
 
-@router.get("")
+@router.get("/")
 async def get_projects():
     """List all projects."""
     projects = list_projects()
     return {"projects": [p.model_dump() for p in projects]}
 
 
-@router.post("")
+@router.post("/")
 async def create_project(request: CreateProjectRequest):
     """Create a new project."""
     project = Project(
