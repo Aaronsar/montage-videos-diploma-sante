@@ -7,7 +7,14 @@ import anthropic
 from models import Rush, VideoSegment
 from services.transcription import format_transcript_for_prompt
 
-client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = anthropic.Anthropic(api_key=os.environ.get("ANTHROPIC_API_KEY"))
+    return _client
 
 
 async def analyze_rushes_with_brief(
@@ -65,7 +72,7 @@ Important:
 - Sélectionne les passages les plus forts, clairs et pertinents par rapport au brief
 - Évite les répétitions, hésitations ou passages faibles"""
 
-    message = client.messages.create(
+    message = _get_client().messages.create(
         model="claude-sonnet-4-6",
         max_tokens=4096,
         messages=[{"role": "user", "content": prompt}],

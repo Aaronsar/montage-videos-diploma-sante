@@ -4,13 +4,20 @@ import openai
 from typing import List
 from models import TranscriptSegment
 
-client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+_client = None
+
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
+    return _client
 
 
 async def transcribe_video(file_path: str) -> List[TranscriptSegment]:
     """Transcribe a video file and return segments with timestamps."""
     with open(file_path, "rb") as audio_file:
-        response = client.audio.transcriptions.create(
+        response = _get_client().audio.transcriptions.create(
             model="whisper-1",
             file=audio_file,
             response_format="verbose_json",

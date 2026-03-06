@@ -64,7 +64,15 @@ export default function HomePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim() }),
       });
+      if (!res.ok) {
+        setCreating(false);
+        return;
+      }
       const project = await res.json();
+      if (!project.id) {
+        setCreating(false);
+        return;
+      }
       router.push(`/projects/${project.id}`);
     } catch (e) {
       console.error(e);
