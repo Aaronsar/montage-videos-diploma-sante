@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
+
+const API = "https://montage-videos-diploma-sante-production.up.railway.app";
 import { useDropzone } from "react-dropzone";
 import {
   ArrowLeft, Upload, FileVideo, Sparkles, CheckCircle, AlertCircle,
@@ -57,7 +59,7 @@ export default function ProjectPage() {
   // ── Fetch project ──
   const fetchProject = useCallback(async () => {
     try {
-      const res = await fetch(`/api/projects/${id}`);
+      const res = await fetch(`${API}/api/projects/${id}`);
       if (!res.ok) return;
       const data: Project = await res.json();
       setProject(data);
@@ -85,7 +87,7 @@ export default function ProjectPage() {
     setUploading(true);
     const formData = new FormData();
     acceptedFiles.forEach(f => formData.append("files", f));
-    await fetch(`/api/upload/${id}/videos`, { method: "POST", body: formData });
+    await fetch(`${API}/api/upload/${id}/videos`, { method: "POST", body: formData });
     await fetchProject();
     setUploading(false);
   }, [id, fetchProject]);
@@ -98,24 +100,24 @@ export default function ProjectPage() {
 
   // ── Actions ──
   const startTranscription = async () => {
-    await fetch(`/api/process/${id}/transcribe`, { method: "POST" });
+    await fetch(`${API}/api/process/${id}/transcribe`, { method: "POST" });
     fetchProject();
   };
 
   const saveBriefAndAnalyze = async () => {
-    await fetch(`/api/projects/${id}/brief`, {
+    await fetch(`${API}/api/projects/${id}/brief`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ brief }),
     });
-    await fetch(`/api/process/${id}/analyze`, { method: "POST" });
+    await fetch(`${API}/api/process/${id}/analyze`, { method: "POST" });
     fetchProject();
   };
 
   const uploadLogo = async (file: File): Promise<string | null> => {
     const fd = new FormData();
     fd.append("file", file);
-    const res = await fetch(`/api/upload/${id}/logo`, { method: "POST", body: fd });
+    const res = await fetch(`${API}/api/upload/${id}/logo`, { method: "POST", body: fd });
     if (!res.ok) return null;
     const data = await res.json();
     return data.filename;
@@ -138,7 +140,7 @@ export default function ProjectPage() {
       body.logo_opacity = 0.85;
       body.logo_size_percent = 15;
     }
-    await fetch(`/api/assembly/${id}/assemble`, {
+    await fetch(`${API}/api/assembly/${id}/assemble`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -147,7 +149,7 @@ export default function ProjectPage() {
   };
 
   const deleteRush = async (rushId: string) => {
-    await fetch(`/api/upload/${id}/videos/${rushId}`, { method: "DELETE" });
+    await fetch(`${API}/api/upload/${id}/videos/${rushId}`, { method: "DELETE" });
     fetchProject();
   };
 

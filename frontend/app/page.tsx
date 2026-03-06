@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Film, Clock, CheckCircle, AlertCircle, Loader2, Trash2 } from "lucide-react";
 
+const API = "https://montage-videos-diploma-sante-production.up.railway.app";
+
 interface Project {
   id: string;
   name: string;
@@ -37,7 +39,7 @@ export default function HomePage() {
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch("/api/projects");
+      const res = await fetch(`${API}/api/projects`);
       const data = await res.json();
       setProjects(data.projects || []);
     } catch (e) {
@@ -57,7 +59,7 @@ export default function HomePage() {
     if (!newName.trim()) return;
     setCreating(true);
     try {
-      const res = await fetch("/api/projects", {
+      const res = await fetch(`${API}/api/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: newName.trim() }),
@@ -73,7 +75,7 @@ export default function HomePage() {
   const deleteProject = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
     if (!confirm("Supprimer ce projet ?")) return;
-    await fetch(`/api/projects/${id}`, { method: "DELETE" });
+    await fetch(`${API}/api/projects/${id}`, { method: "DELETE" });
     fetchProjects();
   };
 
