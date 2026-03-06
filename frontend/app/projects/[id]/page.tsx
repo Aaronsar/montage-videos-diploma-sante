@@ -60,7 +60,10 @@ export default function ProjectPage() {
   const fetchProject = useCallback(async () => {
     try {
       const res = await fetch(`${API}/api/projects/${id}`);
-      if (!res.ok) return;
+      if (!res.ok) {
+        if (res.status === 404) router.push("/");
+        return;
+      }
       const data: Project = await res.json();
       setProject(data);
       if (data.brief && !brief) setBrief(data.brief);
