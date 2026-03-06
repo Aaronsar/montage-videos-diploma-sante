@@ -2,7 +2,7 @@
 import os
 import json
 import uuid
-from typing import List
+from typing import List, Optional
 import anthropic
 from models import Rush, VideoSegment
 from services.transcription import format_transcript_for_prompt
