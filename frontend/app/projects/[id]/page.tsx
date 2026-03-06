@@ -1,14 +1,14 @@
 "use client";
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-
-const API = "https://montage-videos-diploma-sante-production.up.railway.app";
 import { useDropzone } from "react-dropzone";
 import {
   ArrowLeft, Upload, FileVideo, Sparkles, CheckCircle, AlertCircle,
   Loader2, Play, Trash2, Download, RefreshCw, ChevronRight, Film,
   Clock, Sliders, LayoutTemplate
 } from "lucide-react";
+
+const API = "https://montage-videos-diploma-sante-production.up.railway.app";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface TranscriptSegment { start: number; end: number; text: string; }
