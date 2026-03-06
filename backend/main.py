@@ -9,12 +9,12 @@ load_dotenv()
 
 from routers import projects, upload, process, assembly
 
-app = FastAPI(title="Video Editing Platform API", version="1.0.0")
+app = FastAPI(title="Video Editing Platform API", version="1.0.0", redirect_slashes=False)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
