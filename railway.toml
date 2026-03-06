@@ -1,5 +1,12 @@
 [build]
 builder = "nixpacks"
+watchPatterns = ["backend/**"]
+
+[build.nixpacksPlan.phases.setup]
+nixPkgs = ["ffmpeg", "python311"]
+
+[build.nixpacksPlan.phases.install]
+cmds = ["cd backend && pip install -r requirements.txt"]
 
 [deploy]
 startCommand = "cd backend && uvicorn main:app --host 0.0.0.0 --port $PORT"
