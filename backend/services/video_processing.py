@@ -6,7 +6,8 @@ import json
 from typing import List, Optional, Tuple
 from models import VideoSegment, Rush, LogoConfig, LogoPosition, OutputFormat, TranscriptSegment
 
-STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
+_base = "/data" if os.path.isdir("/data") else os.path.dirname(os.path.dirname(__file__))
+STORAGE_DIR = os.path.join(_base, "storage")
 UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 OUTPUTS_DIR = os.path.join(STORAGE_DIR, "outputs")
 LOGOS_DIR = os.path.join(STORAGE_DIR, "logos")
