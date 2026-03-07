@@ -28,12 +28,22 @@ async def add_cors(request: Request, call_next):
         response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, DELETE, OPTIONS, PATCH"
         response.headers["Access-Control-Allow-Headers"] = "Content-Type, Authorization"
         return response
-    response = await call_next(request)
+    try:
+        response = await call_next(request)
+    except Exception as exc:
+        import traceback
+        traceback.print_exc()
+        from fastapi.responses import JSONResponse
+        response = JSONResponse(
+            status_code=500,
+            content={"detail": f"Erreur interne: {type(exc).__name__}: {str(exc)}"},
+        )
     response.headers["Access-Control-Allow-Origin"] = "*"
     return response
 
-# Static files for downloads
-STORAGE_DIR = os.path.join(os.path.dirname(__file__), "storage")
+# Static files — use volume if available (same path as upload/assembly routers)
+_base = "/data" if os.path.isdir("/data") else os.path.dirname(__file__)
+STORAGE_DIR = os.path.join(_base, "storage")
 os.makedirs(os.path.join(STORAGE_DIR, "outputs"), exist_ok=True)
 os.makedirs(os.path.join(STORAGE_DIR, "uploads"), exist_ok=True)
 os.makedirs(os.path.join(STORAGE_DIR, "logos"), exist_ok=True)
