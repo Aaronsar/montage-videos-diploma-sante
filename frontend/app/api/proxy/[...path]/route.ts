@@ -6,7 +6,7 @@ const RAILWAY =
 
 async function handler(req: NextRequest) {
   const url = new URL(req.url);
-  // Strip /api/proxy prefix and remove trailing slash to avoid FastAPI redirects
+  // Strip /api/proxy prefix + trailing slash (avoids FastAPI redirect loops)
   const path = url.pathname.replace("/api/proxy", "").replace(/\/$/, "") || "/";
   const targetUrl = RAILWAY + path + url.search;
 
@@ -17,20 +17,19 @@ async function handler(req: NextRequest) {
     }
   });
 
+  // Buffer body (works for JSON; large uploads handled separately)
   const hasBody = req.method !== "GET" && req.method !== "HEAD";
+  const body = hasBody ? await req.arrayBuffer() : undefined;
 
   const response = await fetch(targetUrl, {
     method: req.method,
     headers,
-    body: hasBody ? req.body : undefined,
-    redirect: "follow",
-    // @ts-ignore
-    duplex: "half",
+    body: body,
   });
 
   const responseHeaders = new Headers();
   response.headers.forEach((value, key) => {
-    if (!["transfer-encoding", "connection", "location"].includes(key.toLowerCase())) {
+    if (!["transfer-encoding", "connection"].includes(key.toLowerCase())) {
       responseHeaders.set(key, value);
     }
   });
