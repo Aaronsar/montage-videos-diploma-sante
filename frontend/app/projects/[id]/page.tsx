@@ -49,6 +49,8 @@ export default function ProjectPage() {
   const [step, setStep] = useState(0);
   const [brief, setBrief] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadSpeed, setUploadSpeed] = useState("");
   const [formats, setFormats] = useState<string[]>(["16:9"]);
   const [addSubtitles, setAddSubtitles] = useState(true);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -88,20 +90,46 @@ export default function ProjectPage() {
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
     setUploading(true);
-    try {
+    setUploadProgress(0);
+    setUploadSpeed("");
+
+    const totalSize = acceptedFiles.reduce((s, f) => s + f.size, 0);
+    const startTime = Date.now();
+
+    await new Promise<void>((resolve) => {
+      const xhr = new XMLHttpRequest();
       const formData = new FormData();
       acceptedFiles.forEach(f => formData.append("files", f));
-      const res = await fetch(`${API}/api/upload/${id}/videos`, { method: "POST", body: formData });
-      if (!res.ok) {
-        const err = await res.text().catch(() => "");
-        console.error("Upload failed:", res.status, err);
-      }
-    } catch (e) {
-      console.error("Upload error:", e);
-    } finally {
-      await fetchProject();
-      setUploading(false);
-    }
+
+      xhr.upload.onprogress = (e) => {
+        if (!e.lengthComputable) return;
+        const pct = Math.round((e.loaded / e.total) * 100);
+        setUploadProgress(pct);
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        const bytesPerSec = e.loaded / elapsed;
+        const remaining = (e.total - e.loaded) / bytesPerSec;
+
+        const fmtSpd = bytesPerSec > 1024 * 1024
+          ? `${(bytesPerSec / 1024 / 1024).toFixed(1)} Mo/s`
+          : `${(bytesPerSec / 1024).toFixed(0)} Ko/s`;
+        const fmtTime = remaining < 60
+          ? `${Math.ceil(remaining)}s restantes`
+          : `${Math.ceil(remaining / 60)}min restantes`;
+
+        setUploadSpeed(`${fmtSpd} · ${fmtTime}`);
+      };
+
+      xhr.onloadend = () => resolve();
+      xhr.onerror = () => resolve();
+      xhr.open("POST", `${API}/api/upload/${id}/videos`);
+      xhr.send(formData);
+    });
+
+    await fetchProject();
+    setUploading(false);
+    setUploadProgress(0);
+    setUploadSpeed("");
   }, [id, fetchProject]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
@@ -273,9 +301,21 @@ export default function ProjectPage() {
                 )}
               </div>
               <p className="font-medium mb-1">
-                {isDragActive ? "Relâchez ici..." : "Glisser-déposer vos vidéos"}
+                {uploading ? `Upload en cours... ${uploadProgress}%` : isDragActive ? "Relâchez ici..." : "Glisser-déposer vos vidéos"}
               </p>
-              <p className="text-gray-500 text-sm">MP4, MOV, AVI, MKV — Taille illimitée</p>
+              {uploading ? (
+                <div className="mt-3 w-full max-w-xs mx-auto">
+                  <div className="h-1.5 bg-[#1e1e2e] rounded-full overflow-hidden mb-1.5">
+                    <div
+                      className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                      style={{ width: `${uploadProgress}%` }}
+                    />
+                  </div>
+                  {uploadSpeed && <p className="text-xs text-gray-400">{uploadSpeed}</p>}
+                </div>
+              ) : (
+                <p className="text-gray-500 text-sm">MP4, MOV, AVI, MKV — Taille illimitée</p>
+              )}
             </div>
 
             {/* Rush list */}
