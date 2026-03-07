@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Plus, Film, Clock, CheckCircle, AlertCircle, Loader2, Trash2 } from "lucide-react";
 
-const API = "/api/proxy";
+const API = "";
 
 interface Project {
   id: string;
