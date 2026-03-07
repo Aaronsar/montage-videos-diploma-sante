@@ -10,9 +10,13 @@ from services.video_processing import get_video_duration
 
 router = APIRouter()
 
-STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
+# Use /data if Railway Volume is mounted there, else fall back to local
+_BASE = "/data" if os.path.isdir("/data") else os.path.join(os.path.dirname(os.path.dirname(__file__)))
+STORAGE_DIR = os.path.join(_BASE, "storage")
 UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 LOGOS_DIR = os.path.join(STORAGE_DIR, "logos")
+os.makedirs(UPLOADS_DIR, exist_ok=True)
+os.makedirs(LOGOS_DIR, exist_ok=True)
 
 ALLOWED_VIDEO_TYPES = {
     "video/mp4", "video/quicktime", "video/x-msvideo",

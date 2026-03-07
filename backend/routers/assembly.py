@@ -13,7 +13,8 @@ from services.video_processing import (
 
 router = APIRouter()
 
-STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
+_BASE = "/data" if os.path.isdir("/data") else os.path.dirname(os.path.dirname(__file__))
+STORAGE_DIR = os.path.join(_BASE, "storage")
 UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 OUTPUTS_DIR = os.path.join(STORAGE_DIR, "outputs")
 LOGOS_DIR = os.path.join(STORAGE_DIR, "logos")

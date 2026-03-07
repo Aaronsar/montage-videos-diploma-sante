@@ -5,7 +5,8 @@ from typing import Optional
 from models import Project
 from datetime import datetime
 
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
+# Use /data if Railway Volume is mounted there, else fall back to local
+DATA_DIR = "/data/projects" if os.path.isdir("/data") else os.path.join(os.path.dirname(__file__), "data")
 os.makedirs(DATA_DIR, exist_ok=True)
 
 

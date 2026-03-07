@@ -8,7 +8,8 @@ from services.ai_analysis import analyze_rushes_with_brief
 
 router = APIRouter()
 
-STORAGE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "storage")
+_BASE = "/data" if os.path.isdir("/data") else os.path.dirname(os.path.dirname(__file__))
+STORAGE_DIR = os.path.join(_BASE, "storage")
 UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 
 
