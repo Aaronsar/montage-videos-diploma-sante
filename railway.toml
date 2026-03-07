@@ -5,3 +5,7 @@ dockerfilePath = "backend/Dockerfile"
 [deploy]
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+
+[[deploy.volumes]]
+mount = "/data"
+name = "video-storage"
