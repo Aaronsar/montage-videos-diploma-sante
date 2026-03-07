@@ -115,7 +115,10 @@ async def transcribe_video(file_path: str) -> Tuple[Optional[List[TranscriptSegm
         return segments, None
 
     except Exception as e:
-        return None, f"Erreur Whisper: {str(e)}"
+        err_str = str(e)
+        if "insufficient_quota" in err_str or "429" in err_str:
+            return None, "Crédit OpenAI épuisé — ajoutez du crédit sur platform.openai.com/billing"
+        return None, f"Erreur Whisper: {err_str}"
     finally:
         # Clean up temp file
         if temp_audio and os.path.exists(temp_audio_path):

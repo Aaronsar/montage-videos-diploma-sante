@@ -25,17 +25,20 @@ async def analyze_rushes_with_brief(
     Given a list of transcribed rushes and a brief,
     Claude selects the best segments to create the final video.
     """
-    # Build the prompt with all transcripts
+    # Build the prompt with all transcripts + B-roll info
     transcripts_text = ""
+    broll_text = ""
     for i, rush in enumerate(rushes):
-        if not rush.transcript:
-            continue
-        transcripts_text += f"\n\n=== RUSH {i+1}: {rush.original_filename} (ID: {rush.id}) ===\n"
-        transcripts_text += f"Durée totale: {_format_duration(rush.duration)}\n"
-        transcripts_text += "Transcription:\n"
-        transcripts_text += format_transcript_for_prompt(rush.transcript)
+        if rush.transcript and len(rush.transcript) > 0:
+            transcripts_text += f"\n\n=== RUSH {i+1}: {rush.original_filename} (ID: {rush.id}) ===\n"
+            transcripts_text += f"Durée totale: {_format_duration(rush.duration)}\n"
+            transcripts_text += "Transcription:\n"
+            transcripts_text += format_transcript_for_prompt(rush.transcript)
+        else:
+            # No audio — treat as B-roll
+            broll_text += f"\n- {rush.original_filename} (ID: {rush.id}, durée: {_format_duration(rush.duration)}) — vidéo sans audio (images drone / B-roll)"
 
-    if not transcripts_text.strip():
+    if not transcripts_text.strip() and not broll_text.strip():
         raise ValueError("Aucun rush n'a été transcrit correctement.")
 
     prompt = f"""Tu es un monteur vidéo expert spécialisé dans les publicités pour réseaux sociaux.
@@ -45,6 +48,7 @@ BRIEF DU CLIENT:
 
 RUSHES DISPONIBLES:
 {transcripts_text}
+{f"VIDÉOS B-ROLL (sans audio, pour illustrer):{broll_text}" if broll_text else ""}
 
 Ta mission:
 1. Analyser toutes les transcriptions
