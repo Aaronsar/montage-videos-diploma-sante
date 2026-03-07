@@ -71,13 +71,11 @@ export default function ProjectPage() {
       setProject(data);
       if (data.brief && !brief) setBrief(data.brief);
 
-      // Auto-advance step based on status
+      // Auto-advance step ONLY during active processing (not manual states)
       const s = data.status;
-      if (s === "created") setStep(0);
-      else if (["uploading","transcribing","transcribed"].includes(s)) setStep(1);
+      if (s === "transcribing") setStep(1);
       else if (s === "analyzing") setStep(2);
-      else if (s === "review") setStep(3);
-      else if (["assembling","done"].includes(s)) setStep(4);
+      else if (s === "assembling") setStep(4);
     } catch {}
   }, [id, brief]);
 
