@@ -51,6 +51,7 @@ export default function ProjectPage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadSpeed, setUploadSpeed] = useState("");
+  const [uploadError, setUploadError] = useState("");
   const [formats, setFormats] = useState<string[]>(["16:9"]);
   const [addSubtitles, setAddSubtitles] = useState(true);
   const [logoFile, setLogoFile] = useState<File | null>(null);
@@ -92,10 +93,11 @@ export default function ProjectPage() {
     setUploading(true);
     setUploadProgress(0);
     setUploadSpeed("");
+    setUploadError("");
 
-    const totalSize = acceptedFiles.reduce((s, f) => s + f.size, 0);
     const startTime = Date.now();
 
+    let uploadFailed = false;
     await new Promise<void>((resolve) => {
       const xhr = new XMLHttpRequest();
       const formData = new FormData();
@@ -122,16 +124,23 @@ export default function ProjectPage() {
 
       xhr.onloadend = () => {
         if (xhr.status < 200 || xhr.status >= 300) {
-          console.error("Upload failed:", xhr.status, xhr.responseText);
+          uploadFailed = true;
+          let msg = `Erreur serveur (${xhr.status})`;
+          try { msg = JSON.parse(xhr.responseText)?.detail || msg; } catch {}
+          setUploadError(msg);
         }
         resolve();
       };
-      xhr.onerror = () => { console.error("Upload network error"); resolve(); };
+      xhr.onerror = () => {
+        uploadFailed = true;
+        setUploadError("Erreur réseau — impossible de joindre le serveur");
+        resolve();
+      };
       xhr.open("POST", `${API}/api/upload/${id}/videos`);
       xhr.send(formData);
     });
 
-    await fetchProject();
+    if (!uploadFailed) await fetchProject();
     setUploading(false);
     setUploadProgress(0);
     setUploadSpeed("");
@@ -334,6 +343,14 @@ export default function ProjectPage() {
                 <p className="text-gray-500 text-sm">MP4, MOV, AVI, MKV — Taille illimitée</p>
               )}
             </div>
+
+            {/* Upload error */}
+            {uploadError && (
+              <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl p-3 flex items-center gap-3">
+                <AlertCircle size={16} className="text-red-400 flex-shrink-0" />
+                <p className="text-red-300 text-sm">{uploadError}</p>
+              </div>
+            )}
 
             {/* Rush list */}
             {project.rushes.length > 0 && (
