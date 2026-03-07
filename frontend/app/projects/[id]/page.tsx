@@ -88,11 +88,20 @@ export default function ProjectPage() {
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
     setUploading(true);
-    const formData = new FormData();
-    acceptedFiles.forEach(f => formData.append("files", f));
-    await fetch(`${API}/api/upload/${id}/videos`, { method: "POST", body: formData });
-    await fetchProject();
-    setUploading(false);
+    try {
+      const formData = new FormData();
+      acceptedFiles.forEach(f => formData.append("files", f));
+      const res = await fetch(`${API}/api/upload/${id}/videos`, { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.text().catch(() => "");
+        console.error("Upload failed:", res.status, err);
+      }
+    } catch (e) {
+      console.error("Upload error:", e);
+    } finally {
+      await fetchProject();
+      setUploading(false);
+    }
   }, [id, fetchProject]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
