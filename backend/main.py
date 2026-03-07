@@ -67,13 +67,36 @@ async def health():
     info["data_mounted"] = os.path.isdir("/data")
     info["tempdir"] = tempfile.gettempdir()
     try:
-        usage = shutil.disk_usage(tempfile.gettempdir())
-        info["temp_free_gb"] = round(usage.free / 1e9, 2)
-    except Exception:
-        pass
-    try:
         usage = shutil.disk_usage("/data")
+        info["data_total_gb"] = round(usage.total / 1e9, 2)
+        info["data_used_gb"] = round(usage.used / 1e9, 2)
         info["data_free_gb"] = round(usage.free / 1e9, 2)
     except Exception:
         info["data_free_gb"] = "N/A"
     return info
+
+
+@app.post("/cleanup")
+async def cleanup_temp():
+    """Clean up temp files to free disk space."""
+    import shutil
+    cleaned = 0
+    for d in ["/data/temp", "/data/storage/temp"]:
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                fp = os.path.join(d, f)
+                try:
+                    if os.path.isfile(fp):
+                        sz = os.path.getsize(fp)
+                        os.remove(fp)
+                        cleaned += sz
+                    elif os.path.isdir(fp):
+                        shutil.rmtree(fp)
+                except Exception:
+                    pass
+    usage = shutil.disk_usage("/data")
+    return {
+        "cleaned_mb": round(cleaned / 1e6, 1),
+        "free_gb": round(usage.free / 1e9, 2),
+        "total_gb": round(usage.total / 1e9, 2),
+    }
