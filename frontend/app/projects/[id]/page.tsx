@@ -8,7 +8,7 @@ import {
   Clock, Sliders, LayoutTemplate
 } from "lucide-react";
 
-const API = "/api/proxy";
+const API = "https://montage-videos-diploma-sante-production.up.railway.app";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 interface TranscriptSegment { start: number; end: number; text: string; }
