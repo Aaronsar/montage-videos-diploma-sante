@@ -6,7 +6,9 @@ const RAILWAY =
 
 async function handler(req: NextRequest) {
   const url = new URL(req.url);
-  const targetUrl = RAILWAY + url.pathname.replace("/api/proxy", "") + url.search;
+  // Strip /api/proxy prefix and remove trailing slash to avoid FastAPI redirects
+  const path = url.pathname.replace("/api/proxy", "").replace(/\/$/, "") || "/";
+  const targetUrl = RAILWAY + path + url.search;
 
   const headers = new Headers();
   req.headers.forEach((value, key) => {
@@ -21,13 +23,14 @@ async function handler(req: NextRequest) {
     method: req.method,
     headers,
     body: hasBody ? req.body : undefined,
+    redirect: "follow",
     // @ts-ignore
     duplex: "half",
   });
 
   const responseHeaders = new Headers();
   response.headers.forEach((value, key) => {
-    if (!["transfer-encoding", "connection"].includes(key.toLowerCase())) {
+    if (!["transfer-encoding", "connection", "location"].includes(key.toLowerCase())) {
       responseHeaders.set(key, value);
     }
   });
