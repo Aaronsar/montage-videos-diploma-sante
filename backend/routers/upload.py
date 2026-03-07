@@ -40,10 +40,15 @@ async def upload_videos(project_id: str, files: List[UploadFile] = File(...)):
         stored_filename = f"{rush_id}{ext}"
         file_path = os.path.join(project_uploads_dir, stored_filename)
 
-        # Save file
-        content = await file.read()
+        # Save file in chunks (avoids loading entire file into RAM)
+        file_size = 0
         async with aiofiles.open(file_path, "wb") as f:
-            await f.write(content)
+            while True:
+                chunk = await file.read(1024 * 1024)  # 1 MB chunks
+                if not chunk:
+                    break
+                await f.write(chunk)
+                file_size += len(chunk)
 
         # Get duration
         try:
@@ -56,7 +61,7 @@ async def upload_videos(project_id: str, files: List[UploadFile] = File(...)):
             filename=stored_filename,
             original_filename=file.filename,
             duration=duration,
-            file_size=len(content),
+            file_size=file_size,
             status="uploaded",
         )
         project.rushes.append(rush)

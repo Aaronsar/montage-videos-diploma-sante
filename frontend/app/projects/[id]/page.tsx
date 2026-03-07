@@ -120,8 +120,13 @@ export default function ProjectPage() {
         setUploadSpeed(`${fmtSpd} · ${fmtTime}`);
       };
 
-      xhr.onloadend = () => resolve();
-      xhr.onerror = () => resolve();
+      xhr.onloadend = () => {
+        if (xhr.status < 200 || xhr.status >= 300) {
+          console.error("Upload failed:", xhr.status, xhr.responseText);
+        }
+        resolve();
+      };
+      xhr.onerror = () => { console.error("Upload network error"); resolve(); };
       xhr.open("POST", `${API}/api/upload/${id}/videos`);
       xhr.send(formData);
     });
