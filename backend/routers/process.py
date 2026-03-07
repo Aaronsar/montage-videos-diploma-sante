@@ -77,21 +77,37 @@ async def _run_transcription(project_id: str):
             continue
 
         try:
-            segments = await transcribe_video(file_path)
-            rush_obj.transcript = segments
-            rush_obj.status = "transcribed"
+            segments, error = await transcribe_video(file_path)
+            if segments:
+                rush_obj.transcript = segments
+                rush_obj.status = "transcribed"
+            elif error == "no_audio":
+                rush_obj.transcript = []
+                rush_obj.status = "transcribed"  # Mark as done (just no audio)
+                rush_obj.error = "Pas de piste audio (vidéo muette)"
+            else:
+                rush_obj.status = "error"
+                rush_obj.error = error or "Erreur inconnue"
         except Exception as e:
             rush_obj.status = "error"
             rush_obj.error = str(e)
 
         save_project(project)
 
-    # Update final status
+    # Update final status — allow partial success (no-audio rushes are OK)
     project = load_project(project_id)
-    all_transcribed = all(r.status == "transcribed" for r in project.rushes)
-    project.status = ProjectStatus.transcribed if all_transcribed else ProjectStatus.error
-    project.progress = 55
-    project.progress_message = "Transcription terminée" if all_transcribed else "Erreur lors de la transcription"
+    has_any_transcribed = any(r.status == "transcribed" for r in project.rushes)
+    all_done = all(r.status in ("transcribed", "error") for r in project.rushes)
+
+    if has_any_transcribed and all_done:
+        project.status = ProjectStatus.transcribed
+        n_ok = sum(1 for r in project.rushes if r.status == "transcribed")
+        n_audio = sum(1 for r in project.rushes if r.transcript and len(r.transcript) > 0)
+        project.progress = 55
+        project.progress_message = f"Transcription terminée — {n_audio}/{total} rushes avec audio"
+    elif all_done:
+        project.status = ProjectStatus.error
+        project.progress_message = "Erreur: aucun rush n'a pu être transcrit"
     save_project(project)
 
 
