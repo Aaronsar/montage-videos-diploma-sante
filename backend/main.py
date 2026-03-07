@@ -81,7 +81,7 @@ async def cleanup_temp():
     """Clean up temp files to free disk space."""
     import shutil
     cleaned = 0
-    for d in ["/data/temp", "/data/storage/temp"]:
+    for d in ["/data/temp", "/data/storage/temp", "/data/storage/chunks"]:
         if os.path.isdir(d):
             for f in os.listdir(d):
                 fp = os.path.join(d, f)
@@ -91,7 +91,9 @@ async def cleanup_temp():
                         os.remove(fp)
                         cleaned += sz
                     elif os.path.isdir(fp):
+                        sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, dn, fns in os.walk(fp) for fn in fns)
                         shutil.rmtree(fp)
+                        cleaned += sz
                 except Exception:
                     pass
     usage = shutil.disk_usage("/data")
@@ -99,4 +101,42 @@ async def cleanup_temp():
         "cleaned_mb": round(cleaned / 1e6, 1),
         "free_gb": round(usage.free / 1e9, 2),
         "total_gb": round(usage.total / 1e9, 2),
+    }
+
+
+@app.post("/cleanup/orphans")
+async def cleanup_orphans():
+    """Delete upload files that don't belong to any existing project."""
+    import shutil
+    from database import list_projects
+
+    projects = list_projects()
+    valid_ids = {p.id for p in projects}
+    cleaned = 0
+
+    uploads_dir = "/data/storage/uploads"
+    if os.path.isdir(uploads_dir):
+        for folder in os.listdir(uploads_dir):
+            folder_path = os.path.join(uploads_dir, folder)
+            if os.path.isdir(folder_path) and folder not in valid_ids:
+                sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, dn, fns in os.walk(folder_path) for fn in fns)
+                shutil.rmtree(folder_path)
+                cleaned += sz
+
+    # Also clean orphan outputs
+    outputs_dir = "/data/storage/outputs"
+    if os.path.isdir(outputs_dir):
+        for folder in os.listdir(outputs_dir):
+            folder_path = os.path.join(outputs_dir, folder)
+            if os.path.isdir(folder_path) and folder not in valid_ids:
+                sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, dn, fns in os.walk(folder_path) for fn in fns)
+                shutil.rmtree(folder_path)
+                cleaned += sz
+
+    usage = shutil.disk_usage("/data")
+    return {
+        "cleaned_mb": round(cleaned / 1e6, 1),
+        "free_gb": round(usage.free / 1e9, 2),
+        "total_gb": round(usage.total / 1e9, 2),
+        "valid_projects": len(valid_ids),
     }
