@@ -1,11 +1,19 @@
 """Video Editing Platform — FastAPI Backend"""
 import os
+import tempfile
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Use /data volume for temp files (8GB) instead of /tmp (Railway ephemeral = 1GB)
+# This prevents upload failures for large video files
+if os.path.isdir("/data"):
+    _tmp = "/data/temp"
+    os.makedirs(_tmp, exist_ok=True)
+    tempfile.tempdir = _tmp
 
 from routers import projects, upload, process, assembly
 
