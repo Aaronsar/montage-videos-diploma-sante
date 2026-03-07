@@ -12,4 +12,5 @@ COPY . .
 
 RUN mkdir -p storage/uploads storage/outputs storage/logos storage/temp data
 
+EXPOSE 8080
 CMD uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
