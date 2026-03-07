@@ -99,13 +99,23 @@ async def transcribe_video(file_path: str) -> Tuple[Optional[List[TranscriptSegm
             )
 
         segments = []
-        if response.segments:
-            for seg in response.segments:
+        raw_segments = response.segments if hasattr(response, "segments") else []
+        if raw_segments:
+            for seg in raw_segments:
+                # Handle both object and dict formats (API version differences)
+                if isinstance(seg, dict):
+                    s_start = seg.get("start", 0)
+                    s_end = seg.get("end", 0)
+                    s_text = seg.get("text", "")
+                else:
+                    s_start = seg.start
+                    s_end = seg.end
+                    s_text = seg.text
                 segments.append(
                     TranscriptSegment(
-                        start=round(seg.start, 2),
-                        end=round(seg.end, 2),
-                        text=seg.text.strip(),
+                        start=round(float(s_start), 2),
+                        end=round(float(s_end), 2),
+                        text=str(s_text).strip(),
                     )
                 )
 
