@@ -149,14 +149,26 @@ export default function ProjectPage() {
     fetchProject();
   };
 
+  const [analysisError, setAnalysisError] = useState("");
+
   const saveBriefAndAnalyze = async () => {
-    await fetch(`${API}/api/projects/${id}/brief`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brief }),
-    });
-    await fetch(`${API}/api/process/${id}/analyze`, { method: "POST" });
-    fetchProject();
+    setAnalysisError("");
+    try {
+      await fetch(`${API}/api/projects/${id}/brief`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ brief }),
+      });
+      const res = await fetch(`${API}/api/process/${id}/analyze`, { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        setAnalysisError(err.detail || "Erreur lors de l'analyse. Vérifiez que les rushes sont transcrits.");
+        return;
+      }
+      fetchProject();
+    } catch (e) {
+      setAnalysisError("Erreur réseau. Réessayez.");
+    }
   };
 
   const uploadLogo = async (file: File): Promise<string | null> => {
@@ -377,23 +389,36 @@ export default function ProjectPage() {
             </div>
 
             {/* Transcription status */}
-            <div className="bg-[#111118] border border-[#1e1e2e] rounded-xl p-4 mb-6">
-              <div className="flex items-center gap-3">
-                {isProcessing ? (
-                  <Loader2 size={16} className="animate-spin text-violet-400" />
-                ) : (
-                  <CheckCircle size={16} className="text-green-400" />
-                )}
-                <div>
-                  <p className="text-sm font-medium">
-                    {isProcessing ? "Transcription en cours..." : "Transcription terminée"}
-                  </p>
-                  <p className="text-xs text-gray-500">
-                    {project.rushes.filter(r => r.status === "transcribed").length}/{project.rushes.length} rush(es) transcrits
-                  </p>
+            {(() => {
+              const transcribed = project.rushes.filter(r => r.status === "transcribed").length;
+              const total = project.rushes.length;
+              const allDone = transcribed === total && total > 0;
+              const isTranscribing = project.status === "transcribing";
+              const hasError = transcribed === 0 && !isTranscribing && total > 0;
+              return (
+                <div className={`border rounded-xl p-4 mb-6 ${hasError ? "bg-red-500/10 border-red-500/30" : "bg-[#111118] border-[#1e1e2e]"}`}>
+                  <div className="flex items-center gap-3">
+                    {isTranscribing ? (
+                      <Loader2 size={16} className="animate-spin text-violet-400" />
+                    ) : allDone ? (
+                      <CheckCircle size={16} className="text-green-400" />
+                    ) : (
+                      <AlertCircle size={16} className={hasError ? "text-red-400" : "text-yellow-400"} />
+                    )}
+                    <div>
+                      <p className="text-sm font-medium">
+                        {isTranscribing ? "Transcription en cours..." : allDone ? "Transcription terminée ✓" : hasError ? "Rushes non transcrits — retournez à l'étape précédente" : `${transcribed}/${total} rush(es) transcrits`}
+                      </p>
+                      {!allDone && (
+                        <p className="text-xs text-gray-500 mt-0.5">
+                          {hasError ? "Cliquez sur « Retour » puis « Transcrire les rushes »" : `${transcribed}/${total} transcrits`}
+                        </p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              );
+            })()}
 
             <div className="mb-4">
               <label className="block text-sm font-medium mb-2">Brief de la vidéo</label>
@@ -416,6 +441,13 @@ export default function ProjectPage() {
               </ul>
             </div>
 
+            {analysisError && (
+              <div className="flex items-center gap-2 bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 mb-4 text-sm text-red-400">
+                <AlertCircle size={15} />
+                {analysisError}
+              </div>
+            )}
+
             <div className="flex justify-between">
               <button
                 onClick={() => setStep(0)}
@@ -425,8 +457,8 @@ export default function ProjectPage() {
               </button>
               <button
                 onClick={saveBriefAndAnalyze}
-                disabled={!brief.trim() || isProcessing || project.status === "transcribing"}
-                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
+                disabled={!brief.trim() || isProcessing || project.rushes.filter(r => r.status === "transcribed").length === 0}
+                className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
                 <Sparkles size={16} />
                 Analyser avec l'IA
