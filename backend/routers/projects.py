@@ -2,7 +2,7 @@
 import uuid
 from datetime import datetime
 from fastapi import APIRouter, HTTPException
-from models import Project, CreateProjectRequest, UpdateBriefRequest, UpdateSegmentsRequest
+from models import Project, ProjectStatus, CreateProjectRequest, UpdateBriefRequest, UpdateSegmentsRequest
 from database import save_project, load_project, list_projects, delete_project
 
 router = APIRouter()
@@ -55,6 +55,24 @@ async def update_segments(project_id: str, request: UpdateSegmentsRequest):
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
     project.segments = request.segments
+    save_project(project)
+    return project.model_dump()
+
+
+@router.post("/{project_id}/reset")
+async def reset_project(project_id: str):
+    """Reset project and rush statuses to allow re-transcription."""
+    project = load_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project.status = ProjectStatus.created
+    project.progress = 0
+    project.progress_message = ""
+    project.error_message = None
+    for rush in project.rushes:
+        rush.status = "uploaded"
+        rush.error = None
+        rush.transcript = None
     save_project(project)
     return project.model_dump()
 
