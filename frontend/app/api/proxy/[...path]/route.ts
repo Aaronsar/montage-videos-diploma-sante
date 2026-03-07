@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const RAILWAY = "https://montage-videos-diploma-sante-production.up.railway.app";
+const RAILWAY =
+  process.env.RAILWAY_URL ||
+  "https://montage-videos-diploma-sante-production.up.railway.app";
 
 async function handler(req: NextRequest) {
   const url = new URL(req.url);
