@@ -87,7 +87,92 @@ export default function ProjectPage() {
     return () => { if (pollingRef.current) clearInterval(pollingRef.current); };
   }, [fetchProject]);
 
-  // ── Upload videos ──
+  // ── Upload videos (chunked for large files) ──
+  const CHUNK_SIZE = 5 * 1024 * 1024; // 5 MB per chunk
+
+  const uploadFileChunked = async (file: File): Promise<boolean> => {
+    // 1. Init chunked upload
+    const initForm = new FormData();
+    initForm.append("filename", file.name);
+    initForm.append("file_size", String(file.size));
+    const initRes = await fetch(`${API}/api/upload/${id}/chunk/init`, { method: "POST", body: initForm });
+    if (!initRes.ok) {
+      const err = await initRes.json().catch(() => ({}));
+      setUploadError(err.detail || `Erreur init (${initRes.status})`);
+      return false;
+    }
+    const { upload_id } = await initRes.json();
+
+    // 2. Upload chunks
+    const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
+    const startTime = Date.now();
+
+    for (let i = 0; i < totalChunks; i++) {
+      const start = i * CHUNK_SIZE;
+      const end = Math.min(start + CHUNK_SIZE, file.size);
+      const blob = file.slice(start, end);
+
+      const chunkForm = new FormData();
+      chunkForm.append("upload_id", upload_id);
+      chunkForm.append("chunk_index", String(i));
+      chunkForm.append("chunk", blob, `chunk_${i}`);
+
+      let retries = 0;
+      let success = false;
+      while (retries < 3 && !success) {
+        try {
+          const res = await fetch(`${API}/api/upload/${id}/chunk/upload`, { method: "POST", body: chunkForm });
+          if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            if (retries >= 2) {
+              setUploadError(err.detail || `Erreur chunk ${i} (${res.status})`);
+              return false;
+            }
+            retries++;
+            await new Promise(r => setTimeout(r, 1000 * retries));
+          } else {
+            success = true;
+          }
+        } catch {
+          retries++;
+          if (retries >= 3) {
+            setUploadError(`Erreur réseau au chunk ${i + 1}/${totalChunks}`);
+            return false;
+          }
+          await new Promise(r => setTimeout(r, 1000 * retries));
+        }
+      }
+
+      // Update progress
+      const bytesSent = end;
+      const pct = Math.round((bytesSent / file.size) * 100);
+      setUploadProgress(pct);
+
+      const elapsed = (Date.now() - startTime) / 1000;
+      const bytesPerSec = bytesSent / elapsed;
+      const remaining = (file.size - bytesSent) / bytesPerSec;
+      const fmtSpd = bytesPerSec > 1024 * 1024
+        ? `${(bytesPerSec / 1024 / 1024).toFixed(1)} Mo/s`
+        : `${(bytesPerSec / 1024).toFixed(0)} Ko/s`;
+      const fmtTime = remaining < 60
+        ? `${Math.ceil(remaining)}s restantes`
+        : `${Math.ceil(remaining / 60)}min restantes`;
+      setUploadSpeed(`${fmtSpd} · ${fmtTime} · Chunk ${i + 1}/${totalChunks}`);
+    }
+
+    // 3. Complete — assemble on server
+    setUploadSpeed("Assemblage du fichier sur le serveur...");
+    const completeForm = new FormData();
+    completeForm.append("upload_id", upload_id);
+    const completeRes = await fetch(`${API}/api/upload/${id}/chunk/complete`, { method: "POST", body: completeForm });
+    if (!completeRes.ok) {
+      const err = await completeRes.json().catch(() => ({}));
+      setUploadError(err.detail || `Erreur assemblage (${completeRes.status})`);
+      return false;
+    }
+    return true;
+  };
+
   const onDrop = useCallback(async (acceptedFiles: File[]) => {
     if (!acceptedFiles.length) return;
     setUploading(true);
@@ -95,52 +180,14 @@ export default function ProjectPage() {
     setUploadSpeed("");
     setUploadError("");
 
-    const startTime = Date.now();
+    let allOk = true;
+    for (const file of acceptedFiles) {
+      setUploadSpeed(`Upload de ${file.name}...`);
+      const ok = await uploadFileChunked(file);
+      if (!ok) { allOk = false; break; }
+    }
 
-    let uploadFailed = false;
-    await new Promise<void>((resolve) => {
-      const xhr = new XMLHttpRequest();
-      const formData = new FormData();
-      acceptedFiles.forEach(f => formData.append("files", f));
-
-      xhr.upload.onprogress = (e) => {
-        if (!e.lengthComputable) return;
-        const pct = Math.round((e.loaded / e.total) * 100);
-        setUploadProgress(pct);
-
-        const elapsed = (Date.now() - startTime) / 1000;
-        const bytesPerSec = e.loaded / elapsed;
-        const remaining = (e.total - e.loaded) / bytesPerSec;
-
-        const fmtSpd = bytesPerSec > 1024 * 1024
-          ? `${(bytesPerSec / 1024 / 1024).toFixed(1)} Mo/s`
-          : `${(bytesPerSec / 1024).toFixed(0)} Ko/s`;
-        const fmtTime = remaining < 60
-          ? `${Math.ceil(remaining)}s restantes`
-          : `${Math.ceil(remaining / 60)}min restantes`;
-
-        setUploadSpeed(`${fmtSpd} · ${fmtTime}`);
-      };
-
-      xhr.onloadend = () => {
-        if (xhr.status < 200 || xhr.status >= 300) {
-          uploadFailed = true;
-          let msg = `Erreur serveur (${xhr.status})`;
-          try { msg = JSON.parse(xhr.responseText)?.detail || msg; } catch {}
-          setUploadError(msg);
-        }
-        resolve();
-      };
-      xhr.onerror = () => {
-        uploadFailed = true;
-        setUploadError("Erreur réseau — impossible de joindre le serveur");
-        resolve();
-      };
-      xhr.open("POST", `${API}/api/upload/${id}/videos`);
-      xhr.send(formData);
-    });
-
-    if (!uploadFailed) await fetchProject();
+    if (allOk) await fetchProject();
     setUploading(false);
     setUploadProgress(0);
     setUploadSpeed("");
