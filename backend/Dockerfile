@@ -5,10 +5,11 @@ RUN apt-get update && apt-get install -y ffmpeg && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
+# Build context = repo root, so prefix with backend/
+COPY backend/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY . .
+COPY backend/ .
 
 RUN mkdir -p storage/uploads storage/outputs storage/logos storage/temp data
 
