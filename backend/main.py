@@ -62,4 +62,18 @@ app.include_router(assembly.router, prefix="/api/assembly", tags=["assembly"])
 
 @app.get("/health")
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    import shutil
+    info = {"status": "ok", "version": "1.0.0"}
+    info["data_mounted"] = os.path.isdir("/data")
+    info["tempdir"] = tempfile.gettempdir()
+    try:
+        usage = shutil.disk_usage(tempfile.gettempdir())
+        info["temp_free_gb"] = round(usage.free / 1e9, 2)
+    except Exception:
+        pass
+    try:
+        usage = shutil.disk_usage("/data")
+        info["data_free_gb"] = round(usage.free / 1e9, 2)
+    except Exception:
+        info["data_free_gb"] = "N/A"
+    return info
