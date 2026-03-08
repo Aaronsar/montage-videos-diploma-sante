@@ -51,31 +51,45 @@ def get_video_dimensions(filepath: str) -> Tuple[int, int]:
 
 
 def cut_segment(rush_filepath: str, start: float, end: float, output_path: str) -> bool:
-    """Cut a segment from a video file."""
+    """Cut a segment from a video file using stream copy (fast, no re-encoding)."""
     duration = end - start
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start),
         "-i", rush_filepath,
         "-t", str(duration),
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-preset", "fast",
-        "-crf", "23",
+        "-c", "copy",           # Stream copy = instant, no re-encoding
+        "-avoid_negative_ts", "make_zero",
         output_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0
+    print(f"[CUT] {os.path.basename(rush_filepath)} {start}s→{end}s ({duration:.1f}s)", flush=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+    if result.returncode != 0:
+        print(f"[CUT FAIL] returncode={result.returncode}\nstderr: {result.stderr[:500]}", flush=True)
+        return False
+    # Validate output
+    if not os.path.exists(output_path):
+        print(f"[CUT FAIL] output file missing", flush=True)
+        return False
+    sz = os.path.getsize(output_path)
+    print(f"[CUT OK] {sz} bytes", flush=True)
+    if sz < 1000:
+        print(f"[CUT FAIL] output too small ({sz} bytes)", flush=True)
+        return False
+    return True
 
 
 def concatenate_segments(segment_paths: List[str], output_path: str) -> bool:
-    """Concatenate multiple video segments into one."""
+    """Concatenate multiple video segments, re-encoding for consistency."""
     # Create a temporary file list
     list_file = os.path.join(TEMP_DIR, f"concat_{uuid.uuid4().hex}.txt")
     with open(list_file, "w") as f:
         for path in segment_paths:
             f.write(f"file '{path}'\n")
 
+    print(f"[CONCAT] {len(segment_paths)} segments → {os.path.basename(output_path)}", flush=True)
+
+    # Re-encode during concat to ensure uniform format
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat",
@@ -85,15 +99,22 @@ def concatenate_segments(segment_paths: List[str], output_path: str) -> bool:
         "-c:a", "aac",
         "-preset", "fast",
         "-crf", "23",
+        "-movflags", "+faststart",
         output_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
     # Cleanup
     if os.path.exists(list_file):
         os.remove(list_file)
 
-    return result.returncode == 0
+    if result.returncode != 0:
+        print(f"[CONCAT FAIL] stderr: {result.stderr[:500]}", flush=True)
+        return False
+
+    sz = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+    print(f"[CONCAT OK] {sz} bytes", flush=True)
+    return True
 
 
 def generate_srt(segments: List[VideoSegment], rushes: List[Rush]) -> str:
