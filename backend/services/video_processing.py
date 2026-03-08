@@ -50,20 +50,67 @@ def get_video_dimensions(filepath: str) -> Tuple[int, int]:
     return 1920, 1080
 
 
+def _has_audio_stream(filepath: str) -> bool:
+    """Check if a video file has an audio stream."""
+    try:
+        result = subprocess.run(
+            [
+                "ffprobe", "-v", "quiet",
+                "-select_streams", "a",
+                "-show_entries", "stream=codec_type",
+                "-of", "csv=p=0",
+                filepath,
+            ],
+            capture_output=True, text=True, timeout=30,
+        )
+        return bool(result.stdout.strip())
+    except Exception:
+        return False
+
+
 def cut_segment(rush_filepath: str, start: float, end: float, output_path: str) -> bool:
-    """Cut a segment from a video file using stream copy (fast, no re-encoding)."""
+    """Cut a segment from a video file, normalizing to 1920x1080 h264+aac.
+
+    Re-encodes every segment to the same format so they can be concatenated:
+    - Video: h264, 1920x1080, 30fps
+    - Audio: AAC stereo 44100Hz (adds silent audio if source has none)
+    """
     duration = end - start
+    has_audio = _has_audio_stream(rush_filepath)
+
+    print(f"[CUT] {os.path.basename(rush_filepath)} {start}s→{end}s ({duration:.1f}s) audio={has_audio}", flush=True)
+
+    # Normalize video: scale to fit 1920x1080 (letterbox if needed), 30fps
+    vf = "scale=1920:1080:force_original_aspect_ratio=decrease,pad=1920:1080:(ow-iw)/2:(oh-ih)/2:black,fps=30,format=yuv420p"
+
     cmd = [
         "ffmpeg", "-y",
         "-ss", str(start),
         "-i", rush_filepath,
-        "-t", str(duration),
-        "-c", "copy",           # Stream copy = instant, no re-encoding
-        "-avoid_negative_ts", "make_zero",
-        output_path
     ]
-    print(f"[CUT] {os.path.basename(rush_filepath)} {start}s→{end}s ({duration:.1f}s)", flush=True)
-    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+
+    if not has_audio:
+        # Add silent audio source so all segments have audio
+        cmd.extend(["-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100"])
+
+    cmd.extend([
+        "-t", str(duration),
+        "-vf", vf,
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "23",
+        "-c:a", "aac",
+        "-ar", "44100",
+        "-ac", "2",
+    ])
+
+    if not has_audio:
+        # Map video from input 0, audio from silent source (input 1)
+        cmd.extend(["-map", "0:v:0", "-map", "1:a:0", "-shortest"])
+
+    cmd.extend(["-movflags", "+faststart", output_path])
+
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
     if result.returncode != 0:
         print(f"[CUT FAIL] returncode={result.returncode}\nstderr: {result.stderr[:500]}", flush=True)
         return False
@@ -80,7 +127,11 @@ def cut_segment(rush_filepath: str, start: float, end: float, output_path: str) 
 
 
 def concatenate_segments(segment_paths: List[str], output_path: str) -> bool:
-    """Concatenate multiple video segments, re-encoding for consistency."""
+    """Concatenate pre-normalized video segments using stream copy (fast).
+
+    All segments must already be in the same format (h264, 1080p, aac)
+    thanks to cut_segment normalization.
+    """
     # Create a temporary file list
     list_file = os.path.join(TEMP_DIR, f"concat_{uuid.uuid4().hex}.txt")
     with open(list_file, "w") as f:
@@ -88,17 +139,17 @@ def concatenate_segments(segment_paths: List[str], output_path: str) -> bool:
             f.write(f"file '{path}'\n")
 
     print(f"[CONCAT] {len(segment_paths)} segments → {os.path.basename(output_path)}", flush=True)
+    for i, p in enumerate(segment_paths):
+        sz = os.path.getsize(p) if os.path.exists(p) else 0
+        print(f"  [{i}] {os.path.basename(p)} — {sz} bytes", flush=True)
 
-    # Re-encode during concat to ensure uniform format
+    # Stream copy since all segments are already normalized to same format
     cmd = [
         "ffmpeg", "-y",
         "-f", "concat",
         "-safe", "0",
         "-i", list_file,
-        "-c:v", "libx264",
-        "-c:a", "aac",
-        "-preset", "fast",
-        "-crf", "23",
+        "-c", "copy",
         "-movflags", "+faststart",
         output_path
     ]
@@ -303,10 +354,26 @@ def _seconds_to_srt_time(seconds: float) -> str:
 
 
 def cleanup_temp_files(project_id: str):
-    """Remove temporary files for a project."""
+    """Remove temporary files for a project (both flat files and project subdirectory)."""
+    import shutil
+
+    # Clean flat files matching project_id
     for filename in os.listdir(TEMP_DIR):
         if project_id in filename:
             try:
-                os.remove(os.path.join(TEMP_DIR, filename))
+                fpath = os.path.join(TEMP_DIR, filename)
+                if os.path.isdir(fpath):
+                    shutil.rmtree(fpath)
+                else:
+                    os.remove(fpath)
             except Exception:
                 pass
+
+    # Clean project-specific temp subdirectory
+    project_temp = os.path.join(TEMP_DIR, project_id)
+    if os.path.isdir(project_temp):
+        try:
+            shutil.rmtree(project_temp)
+            print(f"[CLEANUP] Removed temp dir for {project_id}", flush=True)
+        except Exception:
+            pass
