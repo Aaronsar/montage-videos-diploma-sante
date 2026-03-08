@@ -631,7 +631,7 @@ export default function ProjectPage() {
                   {project.outputs.map((out) => (
                     <a
                       key={out.format}
-                      href={out.url}
+                      href={`${API}${out.url}`}
                       download
                       className="flex items-center justify-between bg-[#111118] border border-[#1e1e2e] rounded-lg px-4 py-3 hover:border-green-500/30 transition-colors"
                     >
