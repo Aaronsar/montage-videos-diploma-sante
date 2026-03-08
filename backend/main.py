@@ -73,6 +73,18 @@ async def health():
         info["data_free_gb"] = round(usage.free / 1e9, 2)
     except Exception:
         info["data_free_gb"] = "N/A"
+
+    # Detailed breakdown per directory
+    breakdown = {}
+    for name in ["storage/uploads", "storage/outputs", "storage/temp", "storage/chunks", "storage/logos", "temp"]:
+        dirpath = os.path.join("/data", name)
+        if os.path.isdir(dirpath):
+            try:
+                total = sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(dirpath) for fn in fns)
+                breakdown[name] = f"{round(total / 1e6, 1)} MB"
+            except Exception:
+                breakdown[name] = "error"
+    info["breakdown"] = breakdown
     return info
 
 
