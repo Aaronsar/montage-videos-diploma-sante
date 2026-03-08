@@ -106,7 +106,13 @@ export default function ProjectPage() {
       else if (s === "analyzing") setStep(2);
       else if (s === "assembling") setStep(4);
       // On completion transitions: advance ONCE then let user navigate freely
-      else if (s === "review" && (prev === "analyzing" || prev === "")) setStep(3);
+      else if (s === "review" && (prev === "analyzing" || prev === "")) {
+        setStep(3);
+        setAnalyzing(false);
+        // Reload segments for editor
+        setEditedSegments([...data.segments].sort((a: Segment, b: Segment) => a.order - b.order));
+        setSegmentsModified(false);
+      }
       else if (s === "done" && prev === "assembling") setStep(4);
     } catch {}
   }, [id, brief]);
@@ -283,8 +289,11 @@ export default function ProjectPage() {
 
   const [analysisError, setAnalysisError] = useState("");
 
+  const [analyzing, setAnalyzing] = useState(false);
+
   const saveBriefAndAnalyze = async () => {
     setAnalysisError("");
+    setAnalyzing(true);
     try {
       await fetch(`${API}/api/projects/${id}/brief`, {
         method: "PUT",
@@ -295,11 +304,16 @@ export default function ProjectPage() {
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
         setAnalysisError(err.detail || "Erreur lors de l'analyse. Vérifiez que les rushes sont transcrits.");
+        setAnalyzing(false);
         return;
       }
+      // Force step to AI analysis view immediately
+      prevStatusRef.current = "analyzing";
+      setStep(2);
       fetchProject();
     } catch (e) {
       setAnalysisError("Erreur réseau. Réessayez.");
+      setAnalyzing(false);
     }
   };
 
@@ -752,11 +766,11 @@ export default function ProjectPage() {
               </button>
               <button
                 onClick={saveBriefAndAnalyze}
-                disabled={!brief.trim() || isProcessing || project.rushes.filter(r => r.status === "transcribed").length === 0}
+                disabled={!brief.trim() || isProcessing || analyzing || project.rushes.filter(r => r.status === "transcribed").length === 0}
                 className="flex items-center gap-2 bg-violet-600 hover:bg-violet-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-2.5 rounded-lg text-sm font-medium transition-colors"
               >
-                <Sparkles size={16} />
-                Analyser avec l'IA
+                {analyzing ? <Loader2 size={16} className="animate-spin" /> : <Sparkles size={16} />}
+                {analyzing ? "Lancement..." : "Analyser avec l'IA"}
               </button>
             </div>
           </div>
@@ -816,8 +830,8 @@ export default function ProjectPage() {
                 )}
                 <button
                   onClick={saveBriefAndAnalyze}
-                  disabled={isProcessing}
-                  className="flex items-center gap-2 text-sm text-gray-400 hover:text-white border border-[#1e1e2e] hover:border-[#333] px-3 py-2 rounded-lg transition-colors"
+                  disabled={isProcessing || analyzing}
+                  className="flex items-center gap-2 text-sm text-gray-400 hover:text-white border border-[#1e1e2e] hover:border-[#333] px-3 py-2 rounded-lg transition-colors disabled:opacity-50"
                 >
                   <RefreshCw size={14} /> Ré-analyser
                 </button>
