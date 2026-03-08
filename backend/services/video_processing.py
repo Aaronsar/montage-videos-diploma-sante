@@ -118,37 +118,72 @@ def concatenate_segments(segment_paths: List[str], output_path: str) -> bool:
 
 
 def generate_srt(segments: List[VideoSegment], rushes: List[Rush]) -> str:
-    """Generate SRT subtitle content from segments."""
+    """Generate SRT subtitle content from segments using Whisper timestamps.
+
+    Uses the original Whisper transcript segments (per-phrase timing) from each Rush
+    to create properly timed subtitles that appear progressively as the person speaks.
+    B-roll segments (no transcript) advance the timeline without subtitles.
+    """
     srt_lines = []
     subtitle_index = 1
     current_time = 0.0
 
+    # Build rush lookup for accessing Whisper transcript segments
+    rush_lookup = {r.id: r for r in rushes}
+
     for seg in sorted(segments, key=lambda s: s.order):
-        if not seg.transcript:
-            duration = seg.end - seg.start
+        duration = seg.end - seg.start
+        rush = rush_lookup.get(seg.rush_id)
+
+        # B-roll or no transcript: just advance timeline
+        if not seg.transcript or not rush or not rush.transcript:
             current_time += duration
             continue
 
-        # Find the rush transcript for timing
-        duration = seg.end - seg.start
+        # Find Whisper transcript segments that fall within this VideoSegment's time range
+        matching_whisper_segs = []
+        for ws in rush.transcript:
+            # Whisper segment overlaps with our cut range [seg.start, seg.end]
+            if ws.end > seg.start and ws.start < seg.end:
+                # Clamp to segment boundaries
+                ws_start = max(ws.start, seg.start)
+                ws_end = min(ws.end, seg.end)
+                # Remap to final video timeline
+                offset_in_seg = ws_start - seg.start
+                final_start = current_time + offset_in_seg
+                final_end = current_time + (ws_end - seg.start)
+                matching_whisper_segs.append((final_start, final_end, ws.text.strip()))
 
-        start_srt = _seconds_to_srt_time(current_time)
-        end_srt = _seconds_to_srt_time(current_time + duration)
+        if matching_whisper_segs:
+            # Create individual SRT entries for each phrase
+            for ws_start, ws_end, text in matching_whisper_segs:
+                if not text:
+                    continue
+                srt_lines.append(str(subtitle_index))
+                srt_lines.append(f"{_seconds_to_srt_time(ws_start)} --> {_seconds_to_srt_time(ws_end)}")
 
-        srt_lines.append(str(subtitle_index))
-        srt_lines.append(f"{start_srt} --> {end_srt}")
+                # Wrap long lines at ~42 chars for readability
+                if len(text) > 42:
+                    words = text.split()
+                    mid = len(words) // 2
+                    text = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
 
-        # Wrap long lines
-        text = seg.transcript.strip()
-        if len(text) > 60:
-            words = text.split()
-            mid = len(words) // 2
-            text = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
+                srt_lines.append(text)
+                srt_lines.append("")
+                subtitle_index += 1
+        else:
+            # Fallback: single subtitle for the whole segment
+            srt_lines.append(str(subtitle_index))
+            srt_lines.append(f"{_seconds_to_srt_time(current_time)} --> {_seconds_to_srt_time(current_time + duration)}")
+            text = seg.transcript.strip()
+            if len(text) > 42:
+                words = text.split()
+                mid = len(words) // 2
+                text = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
+            srt_lines.append(text)
+            srt_lines.append("")
+            subtitle_index += 1
 
-        srt_lines.append(text)
-        srt_lines.append("")
-
-        subtitle_index += 1
         current_time += duration
 
     return "\n".join(srt_lines)
@@ -158,13 +193,14 @@ def add_subtitles(video_path: str, srt_path: str, output_path: str, style: str =
     """Burn subtitles into video."""
     if style == "modern":
         subtitle_style = (
-            "FontName=Arial,FontSize=20,Bold=1,"
-            "PrimaryColour=&HFFFFFF,OutlineColour=&H000000,"
+            "FontName=Arial,FontSize=22,Bold=1,"
+            "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
+            "BackColour=&H80000000,"
             "Outline=2,Shadow=1,Alignment=2,"
-            "MarginV=40"
+            "MarginV=50"
         )
     else:
-        subtitle_style = "FontSize=18,PrimaryColour=&HFFFFFF,OutlineColour=&H000000,Outline=2"
+        subtitle_style = "FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2"
 
     # Escape path for ffmpeg filter
     escaped_srt = srt_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
@@ -173,11 +209,20 @@ def add_subtitles(video_path: str, srt_path: str, output_path: str, style: str =
         "ffmpeg", "-y",
         "-i", video_path,
         "-vf", f"subtitles='{escaped_srt}':force_style='{subtitle_style}'",
+        "-c:v", "libx264",
+        "-preset", "fast",
+        "-crf", "22",
         "-c:a", "copy",
+        "-movflags", "+faststart",
         output_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
-    return result.returncode == 0
+    print(f"[SUBTITLES] Burning subtitles into video...", flush=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        print(f"[SUBTITLES FAIL] stderr: {result.stderr[:500]}", flush=True)
+        return False
+    print(f"[SUBTITLES OK]", flush=True)
+    return True
 
 
 def add_logo(video_path: str, logo_path: str, output_path: str, config: LogoConfig) -> bool:

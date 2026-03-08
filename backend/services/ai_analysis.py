@@ -41,6 +41,20 @@ async def analyze_rushes_with_brief(
     if not transcripts_text.strip() and not broll_text.strip():
         raise ValueError("Aucun rush n'a été transcrit correctement.")
 
+    broll_instructions = ""
+    if broll_text:
+        broll_instructions = f"""
+VIDÉOS B-ROLL (sans audio, pour illustrer):{broll_text}
+
+INSTRUCTIONS B-ROLL IMPORTANTES:
+- Tu DOIS intercaler des plans B-roll entre les segments d'interview pour rendre la vidéo dynamique
+- Les plans B-roll servent d'illustration visuelle pendant que l'audio de l'interview continue
+- Place 3 à 8 secondes de B-roll entre les passages d'interview (tous les 10-20 secondes environ)
+- Pour les segments B-roll, mets "transcript": "" (vide) car il n'y a pas d'audio
+- Varie les moments du B-roll (début, milieu, fin de la vidéo source) pour diversifier les plans
+- Le B-roll doit être entrelacé avec l'interview, pas regroupé à la fin
+"""
+
     prompt = f"""Tu es un monteur vidéo expert spécialisé dans les publicités pour réseaux sociaux.
 
 BRIEF DU CLIENT:
@@ -48,14 +62,18 @@ BRIEF DU CLIENT:
 
 RUSHES DISPONIBLES:
 {transcripts_text}
-{f"VIDÉOS B-ROLL (sans audio, pour illustrer):{broll_text}" if broll_text else ""}
+{broll_instructions}
 
 Ta mission:
 1. Analyser toutes les transcriptions
 2. Sélectionner les meilleurs passages pour créer une vidéo percutante selon le brief
 3. Ordonner les segments de façon narrative et dynamique
-4. Chaque segment doit avoir minimum 3 secondes et maximum 30 secondes
-5. La vidéo finale doit faire entre 30 secondes et 3 minutes selon le brief
+4. Intercaler des plans B-roll/illustration entre les segments d'interview si disponibles
+5. Chaque segment doit avoir minimum 3 secondes et maximum 30 secondes
+6. La vidéo finale doit faire entre 30 secondes et 3 minutes selon le brief
+
+STRUCTURE TYPE D'UNE BONNE VIDÉO:
+[Interview 10-15s] → [B-roll 3-5s] → [Interview 10-15s] → [B-roll 3-5s] → [Interview 10-15s]
 
 Réponds UNIQUEMENT avec un JSON valide dans ce format exact, sans texte avant ou après:
 {{
@@ -65,7 +83,7 @@ Réponds UNIQUEMENT avec un JSON valide dans ce format exact, sans texte avant o
       "rush_id": "ID_DU_RUSH",
       "start": 0.0,
       "end": 10.5,
-      "transcript": "texte de ce segment"
+      "transcript": "texte de ce segment (vide pour B-roll)"
     }}
   ]
 }}
@@ -74,7 +92,8 @@ Important:
 - Les timestamps start/end doivent être en secondes (float)
 - rush_id doit correspondre exactement aux IDs fournis
 - Sélectionne les passages les plus forts, clairs et pertinents par rapport au brief
-- Évite les répétitions, hésitations ou passages faibles"""
+- Évite les répétitions, hésitations ou passages faibles
+- Pour les B-roll: transcript = "" (chaîne vide), et utilise différentes portions de la vidéo"""
 
     message = _get_client().messages.create(
         model="claude-sonnet-4-6",
