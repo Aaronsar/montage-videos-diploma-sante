@@ -97,8 +97,9 @@ def cut_segment(rush_filepath: str, start: float, end: float, output_path: str) 
         "-t", str(duration),
         "-vf", vf,
         "-c:v", "libx264",
-        "-preset", "fast",
+        "-preset", "ultrafast",    # ultrafast for speed on Railway
         "-crf", "23",
+        "-threads", "0",           # Use all available CPU cores
         "-c:a", "aac",
         "-ar", "44100",
         "-ac", "2",

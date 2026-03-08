@@ -72,8 +72,8 @@ async def assemble_video(
     return {"status": "started", "project_id": project_id}
 
 
-async def _run_assembly(project_id: str):
-    """Background task: assemble video from segments."""
+def _run_assembly(project_id: str):
+    """Background task: assemble video from segments (sync for thread pool)."""
     project = load_project(project_id)
     if not project:
         return
@@ -91,24 +91,30 @@ async def _run_assembly(project_id: str):
         rush_lookup = {r.id: r for r in project.rushes}
         segments = sorted(project.segments, key=lambda s: s.order)
 
-        # Step 1: Cut each segment
-        project.progress_message = "Découpe des segments..."
-        project.progress = 82
-        save_project(project)
-
+        # Step 1: Cut each segment (with per-segment progress)
+        total_segs = len(segments)
         cut_paths = []
-        for seg in segments:
+        for idx, seg in enumerate(segments):
+            project = load_project(project_id)
+            project.progress_message = f"Découpe segment {idx + 1}/{total_segs}..."
+            project.progress = 80 + int((idx / total_segs) * 8)  # 80-88%
+            save_project(project)
+
             rush = rush_lookup.get(seg.rush_id)
             if not rush:
+                print(f"[ASSEMBLY] Segment {idx}: rush {seg.rush_id} not found, skipping", flush=True)
                 continue
             rush_path = os.path.join(project_uploads_dir, rush.filename)
             if not os.path.exists(rush_path):
+                print(f"[ASSEMBLY] Segment {idx}: file {rush_path} not found, skipping", flush=True)
                 continue
 
             cut_path = os.path.join(project_temp_dir, f"seg_{seg.id}.mp4")
             success = cut_segment(rush_path, seg.start, seg.end, cut_path)
             if success:
                 cut_paths.append(cut_path)
+            else:
+                print(f"[ASSEMBLY] Segment {idx}: cut failed, skipping", flush=True)
 
         if not cut_paths:
             raise Exception("Aucun segment n'a pu être découpé.")
