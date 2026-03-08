@@ -5,7 +5,7 @@ import aiofiles
 import json
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import List, Optional
-from models import Rush
+from models import Rush, RushCategory
 from database import load_project, save_project
 from services.video_processing import get_video_duration
 
@@ -30,7 +30,7 @@ MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024  # 2GB
 
 
 @router.post("/{project_id}/videos")
-async def upload_videos(project_id: str, files: List[UploadFile] = File(...)):
+async def upload_videos(project_id: str, files: List[UploadFile] = File(...), category: str = Form("interview")):
     """Upload rush videos for a project."""
     project = load_project(project_id)
     if not project:
@@ -70,6 +70,7 @@ async def upload_videos(project_id: str, files: List[UploadFile] = File(...)):
             duration=duration,
             file_size=file_size,
             status="uploaded",
+            category=RushCategory(category),
         )
         project.rushes.append(rush)
         uploaded_rushes.append(rush)
@@ -81,7 +82,7 @@ async def upload_videos(project_id: str, files: List[UploadFile] = File(...)):
 # ─── Chunked upload endpoints (for large files) ─────────────────────────────
 
 @router.post("/{project_id}/chunk/init")
-async def chunk_init(project_id: str, filename: str = Form(...), file_size: int = Form(...)):
+async def chunk_init(project_id: str, filename: str = Form(...), file_size: int = Form(...), category: str = Form("interview")):
     """Initialize a chunked upload. Returns an upload_id."""
     project = load_project(project_id)
     if not project:
@@ -91,8 +92,8 @@ async def chunk_init(project_id: str, filename: str = Form(...), file_size: int 
     upload_dir = os.path.join(CHUNKS_DIR, upload_id)
     os.makedirs(upload_dir, exist_ok=True)
 
-    # Save metadata
-    meta = {"filename": filename, "file_size": file_size, "project_id": project_id, "chunks_received": 0}
+    # Save metadata (including category)
+    meta = {"filename": filename, "file_size": file_size, "project_id": project_id, "chunks_received": 0, "category": category}
     async with aiofiles.open(os.path.join(upload_dir, "meta.json"), "w") as f:
         await f.write(json.dumps(meta))
 
@@ -179,6 +180,7 @@ async def chunk_complete(project_id: str, upload_id: str = Form(...)):
     except Exception:
         duration = None
 
+    rush_category = meta.get("category", "interview")
     rush = Rush(
         id=rush_id,
         filename=stored_filename,
@@ -186,6 +188,7 @@ async def chunk_complete(project_id: str, upload_id: str = Form(...)):
         duration=duration,
         file_size=file_size,
         status="uploaded",
+        category=RushCategory(rush_category),
     )
     project.rushes.append(rush)
     save_project(project)

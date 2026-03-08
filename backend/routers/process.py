@@ -64,6 +64,16 @@ async def _run_transcription(project_id: str):
         if not rush_obj:
             continue
 
+        # Skip B-roll: no transcription needed
+        if getattr(rush_obj, 'category', 'interview') == 'broll':
+            rush_obj.status = "transcribed"
+            rush_obj.transcript = []
+            rush_obj.error = "B-roll (pas de transcription)"
+            project.progress = int(5 + ((i + 1) / total) * 50)
+            project.progress_message = f"B-roll {rush_obj.original_filename} — pas de transcription ({i+1}/{total})"
+            save_project(project)
+            continue
+
         rush_obj.status = "transcribing"
         project.progress = int(5 + (i / total) * 50)
         project.progress_message = f"Transcription de {rush_obj.original_filename}... ({i+1}/{total})"

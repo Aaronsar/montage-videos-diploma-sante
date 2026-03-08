@@ -207,19 +207,12 @@ def generate_srt(segments: List[VideoSegment], rushes: List[Rush]) -> str:
                 matching_whisper_segs.append((final_start, final_end, ws.text.strip()))
 
         if matching_whisper_segs:
-            # Create individual SRT entries for each phrase
+            # Create individual SRT entries for each phrase (single line, no wrapping)
             for ws_start, ws_end, text in matching_whisper_segs:
                 if not text:
                     continue
                 srt_lines.append(str(subtitle_index))
                 srt_lines.append(f"{_seconds_to_srt_time(ws_start)} --> {_seconds_to_srt_time(ws_end)}")
-
-                # Wrap long lines at ~42 chars for readability
-                if len(text) > 42:
-                    words = text.split()
-                    mid = len(words) // 2
-                    text = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
-
                 srt_lines.append(text)
                 srt_lines.append("")
                 subtitle_index += 1
@@ -227,12 +220,7 @@ def generate_srt(segments: List[VideoSegment], rushes: List[Rush]) -> str:
             # Fallback: single subtitle for the whole segment
             srt_lines.append(str(subtitle_index))
             srt_lines.append(f"{_seconds_to_srt_time(current_time)} --> {_seconds_to_srt_time(current_time + duration)}")
-            text = seg.transcript.strip()
-            if len(text) > 42:
-                words = text.split()
-                mid = len(words) // 2
-                text = " ".join(words[:mid]) + "\n" + " ".join(words[mid:])
-            srt_lines.append(text)
+            srt_lines.append(seg.transcript.strip())
             srt_lines.append("")
             subtitle_index += 1
 
@@ -242,17 +230,21 @@ def generate_srt(segments: List[VideoSegment], rushes: List[Rush]) -> str:
 
 
 def add_subtitles(video_path: str, srt_path: str, output_path: str, style: str = "modern") -> bool:
-    """Burn subtitles into video."""
+    """Burn subtitles into video with EduMove brand styling."""
+    # EduMove brand colors in ASS format (ABGR):
+    # Orange #E8872B → &H002B87E8
+    # Navy  #1E1B4B → &H004B1B1E
     if style == "modern":
         subtitle_style = (
-            "FontName=Arial,FontSize=22,Bold=1,"
-            "PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,"
-            "BackColour=&H80000000,"
-            "Outline=2,Shadow=1,Alignment=2,"
+            "FontName=Arial,FontSize=17,Bold=1,"
+            "PrimaryColour=&H00FFFFFF,"          # White text
+            "OutlineColour=&H002B87E8,"          # Orange outline (EduMove)
+            "BackColour=&H00000000,"
+            "Outline=2,Shadow=0,Alignment=2,"
             "MarginV=50"
         )
     else:
-        subtitle_style = "FontSize=18,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Outline=2"
+        subtitle_style = "FontSize=17,PrimaryColour=&H00FFFFFF,OutlineColour=&H002B87E8,Outline=2"
 
     # Escape path for ffmpeg filter
     escaped_srt = srt_path.replace("\\", "\\\\").replace(":", "\\:").replace("'", "\\'")
@@ -262,7 +254,7 @@ def add_subtitles(video_path: str, srt_path: str, output_path: str, style: str =
         "-i", video_path,
         "-vf", f"subtitles='{escaped_srt}':force_style='{subtitle_style}'",
         "-c:v", "libx264",
-        "-preset", "fast",
+        "-preset", "ultrafast",
         "-crf", "22",
         "-c:a", "copy",
         "-movflags", "+faststart",
@@ -336,13 +328,117 @@ def export_format(video_path: str, output_path: str, format: OutputFormat) -> bo
         "-vf", filter_chain,
         "-c:v", "libx264",
         "-c:a", "aac",
-        "-preset", "fast",
+        "-preset", "ultrafast",
         "-crf", "22",
         "-movflags", "+faststart",
         output_path
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    print(f"[EXPORT] Format {format.value}...", flush=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        print(f"[EXPORT FAIL] stderr: {result.stderr[:300]}", flush=True)
     return result.returncode == 0
+
+
+def concatenate_with_transitions(segment_paths: List[str], output_path: str, transition_duration: float = 0.5) -> bool:
+    """Concatenate segments with crossfade transitions using xfade filter.
+
+    Falls back to simple concatenation if >20 segments or on error.
+    """
+    n = len(segment_paths)
+
+    # Fallback to simple concat if not worth it
+    if n <= 1 or transition_duration <= 0 or n > 20:
+        return concatenate_segments(segment_paths, output_path)
+
+    # Get durations of each segment
+    durations = []
+    for p in segment_paths:
+        dur = get_video_duration(p)
+        if dur <= 0:
+            print(f"[XFADE] Can't get duration for {p}, falling back", flush=True)
+            return concatenate_segments(segment_paths, output_path)
+        durations.append(dur)
+
+    td = min(transition_duration, min(durations) / 2)  # Don't exceed half of shortest segment
+
+    # Build FFmpeg command with xfade chain
+    cmd = ["ffmpeg", "-y"]
+    for p in segment_paths:
+        cmd.extend(["-i", p])
+
+    # Build video + audio xfade filter chains
+    video_filters = []
+    audio_filters = []
+
+    # Calculate cumulative offsets for xfade
+    # offset = cumulative_duration_so_far - cumulative_transitions_so_far
+    cumulative_dur = durations[0]
+
+    for i in range(1, n):
+        offset = cumulative_dur - td
+        prev_v = f"[xv{i-1}]" if i > 1 else "[0:v]"
+        prev_a = f"[xa{i-1}]" if i > 1 else "[0:a]"
+        out_v = f"[xv{i}]" if i < n - 1 else "[vout]"
+        out_a = f"[xa{i}]" if i < n - 1 else "[aout]"
+
+        video_filters.append(f"{prev_v}[{i}:v]xfade=transition=fade:duration={td}:offset={offset:.3f}{out_v}")
+        audio_filters.append(f"{prev_a}[{i}:a]acrossfade=d={td}{out_a}")
+
+        cumulative_dur += durations[i] - td
+
+    filter_complex = ";".join(video_filters + audio_filters)
+
+    cmd.extend([
+        "-filter_complex", filter_complex,
+        "-map", "[vout]", "-map", "[aout]",
+        "-c:v", "libx264", "-preset", "ultrafast", "-crf", "23",
+        "-c:a", "aac", "-ar", "44100", "-ac", "2",
+        "-movflags", "+faststart",
+        output_path
+    ])
+
+    print(f"[XFADE] {n} segments, transition={td:.1f}s", flush=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=900)
+
+    if result.returncode != 0:
+        print(f"[XFADE FAIL] stderr: {result.stderr[:500]}", flush=True)
+        print(f"[XFADE] Falling back to simple concat", flush=True)
+        return concatenate_segments(segment_paths, output_path)
+
+    sz = os.path.getsize(output_path) if os.path.exists(output_path) else 0
+    print(f"[XFADE OK] {sz} bytes", flush=True)
+    return True
+
+
+def add_background_music(video_path: str, music_path: str, output_path: str, volume: float = 0.15) -> bool:
+    """Add background music to video, mixed at low volume under main audio.
+
+    Music loops if shorter than video. Main audio is kept at full volume.
+    """
+    cmd = [
+        "ffmpeg", "-y",
+        "-i", video_path,
+        "-stream_loop", "-1",  # Loop music infinitely
+        "-i", music_path,
+        "-filter_complex",
+        f"[1:a]volume={volume}[m];[0:a][m]amix=inputs=2:duration=first:dropout_transition=2[a]",
+        "-map", "0:v",
+        "-map", "[a]",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-ar", "44100",
+        "-ac", "2",
+        "-movflags", "+faststart",
+        output_path
+    ]
+    print(f"[MUSIC] Adding background music at volume={volume}", flush=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+    if result.returncode != 0:
+        print(f"[MUSIC FAIL] stderr: {result.stderr[:500]}", flush=True)
+        return False
+    print(f"[MUSIC OK]", flush=True)
+    return True
 
 
 def _seconds_to_srt_time(seconds: float) -> str:

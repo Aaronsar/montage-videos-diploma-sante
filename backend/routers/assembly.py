@@ -4,11 +4,11 @@ import uuid
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Optional
-from models import ProjectStatus, OutputFormat, LogoConfig, LogoPosition, OutputFile, ExportSettings
+from models import ProjectStatus, OutputFormat, LogoConfig, LogoPosition, OutputFile, ExportSettings, MusicConfig
 from database import load_project, save_project
 from services.video_processing import (
-    cut_segment, concatenate_segments, generate_srt,
-    add_subtitles, add_logo, export_format, cleanup_temp_files
+    cut_segment, concatenate_segments, concatenate_with_transitions, generate_srt,
+    add_subtitles, add_logo, add_background_music, export_format, cleanup_temp_files
 )
 
 router = APIRouter()
@@ -19,6 +19,7 @@ UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 OUTPUTS_DIR = os.path.join(STORAGE_DIR, "outputs")
 LOGOS_DIR = os.path.join(STORAGE_DIR, "logos")
 TEMP_DIR = os.path.join(STORAGE_DIR, "temp")
+ASSETS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets")
 
 
 class AssembleRequest(BaseModel):
@@ -29,6 +30,22 @@ class AssembleRequest(BaseModel):
     logo_position: Optional[LogoPosition] = LogoPosition.bottom_right
     logo_opacity: float = 0.85
     logo_size_percent: float = 15
+    transition_duration: float = 0.5  # 0 = no transitions
+    music_track: Optional[str] = None  # filename from assets/music/
+    music_volume: float = 0.15
+
+
+@router.get("/music-tracks")
+async def list_music_tracks():
+    """List available background music tracks."""
+    music_dir = os.path.join(ASSETS_DIR, "music")
+    tracks = []
+    if os.path.isdir(music_dir):
+        for f in sorted(os.listdir(music_dir)):
+            if f.endswith((".mp3", ".m4a", ".wav", ".ogg")):
+                name = f.rsplit(".", 1)[0].replace("_", " ").replace("-", " ").title()
+                tracks.append({"filename": f, "name": name})
+    return {"tracks": tracks}
 
 
 @router.post("/{project_id}/assemble")
@@ -56,11 +73,20 @@ async def assemble_video(
             size_percent=request.logo_size_percent,
         )
 
+    music_config = None
+    if request.music_track:
+        music_config = MusicConfig(
+            filename=request.music_track,
+            volume=request.music_volume,
+        )
+
     project.export_settings = ExportSettings(
         formats=request.formats,
         logo=logo_config,
         add_subtitles=request.add_subtitles,
         subtitle_style=request.subtitle_style,
+        transition_duration=request.transition_duration,
+        music=music_config,
     )
     project.status = ProjectStatus.assembling
     project.progress = 80
@@ -119,20 +145,25 @@ def _run_assembly(project_id: str):
         if not cut_paths:
             raise Exception("Aucun segment n'a pu être découpé.")
 
-        # Step 2: Concatenate
+        # Step 2: Concatenate (with transitions if enabled)
         project = load_project(project_id)
-        project.progress_message = "Assemblage des segments..."
-        project.progress = 87
+        td = project.export_settings.transition_duration
+        project.progress_message = f"Assemblage des segments{' avec fondus' if td > 0 else ''}..."
+        project.progress = 88
         save_project(project)
 
         base_video = os.path.join(project_temp_dir, "base.mp4")
-        success = concatenate_segments(cut_paths, base_video)
+        if td and td > 0:
+            success = concatenate_with_transitions(cut_paths, base_video, td)
+        else:
+            success = concatenate_segments(cut_paths, base_video)
         if not success:
             raise Exception("Erreur lors de la concatenation.")
 
         # Step 3: Add subtitles if requested
         current_video = base_video
         if project.export_settings.add_subtitles:
+            project = load_project(project_id)
             project.progress_message = "Ajout des sous-titres..."
             project.progress = 90
             save_project(project)
@@ -154,7 +185,7 @@ def _run_assembly(project_id: str):
         if project.export_settings.logo:
             project = load_project(project_id)
             project.progress_message = "Ajout du logo..."
-            project.progress = 93
+            project.progress = 92
             save_project(project)
 
             logo_path = os.path.join(project_logos_dir, project.export_settings.logo.filename)
@@ -164,7 +195,24 @@ def _run_assembly(project_id: str):
                 if success:
                     current_video = logo_video
 
-        # Step 5: Export each format
+        # Step 5: Add background music if configured
+        if project.export_settings.music:
+            project = load_project(project_id)
+            project.progress_message = "Ajout de la musique de fond..."
+            project.progress = 94
+            save_project(project)
+
+            music_path = os.path.join(ASSETS_DIR, "music", project.export_settings.music.filename)
+            if os.path.exists(music_path):
+                music_video = os.path.join(project_temp_dir, "with_music.mp4")
+                success = add_background_music(
+                    current_video, music_path, music_video,
+                    volume=project.export_settings.music.volume
+                )
+                if success:
+                    current_video = music_video
+
+        # Step 6: Export each format
         project = load_project(project_id)
         project.progress_message = "Export des formats..."
         project.progress = 95

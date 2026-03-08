@@ -22,6 +22,11 @@ class TranscriptSegment(BaseModel):
     text: str
 
 
+class RushCategory(str, Enum):
+    interview = "interview"
+    broll = "broll"
+
+
 class Rush(BaseModel):
     id: str
     filename: str
@@ -31,6 +36,7 @@ class Rush(BaseModel):
     transcript: Optional[List[TranscriptSegment]] = None
     status: str = "uploaded"  # uploaded | transcribing | transcribed | error
     error: Optional[str] = None
+    category: RushCategory = RushCategory.interview
 
 
 class VideoSegment(BaseModel):
@@ -64,11 +70,18 @@ class OutputFormat(str, Enum):
     vertical = "4:5"
 
 
+class MusicConfig(BaseModel):
+    filename: str
+    volume: float = 0.15  # 0.0 to 1.0
+
+
 class ExportSettings(BaseModel):
     formats: List[OutputFormat] = [OutputFormat.landscape]
     logo: Optional[LogoConfig] = None
     add_subtitles: bool = True
     subtitle_style: str = "modern"  # modern | classic | minimal
+    transition_duration: float = 0.5  # seconds, 0 = no transition
+    music: Optional[MusicConfig] = None
 
 
 class OutputFile(BaseModel):
