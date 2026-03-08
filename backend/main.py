@@ -78,7 +78,7 @@ async def health():
 
 @app.post("/cleanup")
 async def cleanup_temp():
-    """Clean up temp files to free disk space."""
+    """Clean up temp files, stale chunks and old outputs to free disk space."""
     import shutil
     cleaned = 0
     for d in ["/data/temp", "/data/storage/temp", "/data/storage/chunks"]:
@@ -94,6 +94,18 @@ async def cleanup_temp():
                         sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, dn, fns in os.walk(fp) for fn in fns)
                         shutil.rmtree(fp)
                         cleaned += sz
+                except Exception:
+                    pass
+    # Also clean old output files for all projects (re-exported anyway)
+    outputs_dir = "/data/storage/outputs"
+    if os.path.isdir(outputs_dir):
+        for folder in os.listdir(outputs_dir):
+            folder_path = os.path.join(outputs_dir, folder)
+            if os.path.isdir(folder_path):
+                try:
+                    sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(folder_path) for fn in fns)
+                    shutil.rmtree(folder_path)
+                    cleaned += sz
                 except Exception:
                     pass
     usage = shutil.disk_usage("/data")

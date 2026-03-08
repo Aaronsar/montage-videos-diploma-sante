@@ -1,6 +1,7 @@
 """Video assembly and export routes."""
 import os
 import uuid
+import shutil
 from fastapi import APIRouter, HTTPException, BackgroundTasks
 from pydantic import BaseModel
 from typing import List, Optional
@@ -105,6 +106,9 @@ def _run_assembly(project_id: str):
         return
 
     try:
+        # Auto-cleanup previous temp files to free space before assembly
+        cleanup_temp_files(project_id)
+
         project_uploads_dir = os.path.join(UPLOADS_DIR, project_id)
         project_outputs_dir = os.path.join(OUTPUTS_DIR, project_id)
         project_temp_dir = os.path.join(TEMP_DIR, project_id)

@@ -1,8 +1,10 @@
 """File upload routes (videos + logo)."""
 import os
 import uuid
+import shutil
 import aiofiles
 import json
+import time
 from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from typing import List, Optional
 from models import Rush, RushCategory
@@ -17,9 +19,57 @@ STORAGE_DIR = os.path.join(_BASE, "storage")
 UPLOADS_DIR = os.path.join(STORAGE_DIR, "uploads")
 LOGOS_DIR = os.path.join(STORAGE_DIR, "logos")
 CHUNKS_DIR = os.path.join(STORAGE_DIR, "chunks")
+TEMP_DIR = os.path.join(STORAGE_DIR, "temp")
 os.makedirs(UPLOADS_DIR, exist_ok=True)
 os.makedirs(LOGOS_DIR, exist_ok=True)
 os.makedirs(CHUNKS_DIR, exist_ok=True)
+
+
+def _auto_cleanup():
+    """Auto-clean temp files and stale chunks (>2h old) to free disk space."""
+    now = time.time()
+    cleaned = 0
+
+    # Clean temp dir
+    for d in [TEMP_DIR, os.path.join(_BASE, "temp")]:
+        if os.path.isdir(d):
+            for f in os.listdir(d):
+                fp = os.path.join(d, f)
+                try:
+                    if os.path.isfile(fp):
+                        cleaned += os.path.getsize(fp)
+                        os.remove(fp)
+                    elif os.path.isdir(fp):
+                        cleaned += sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(fp) for fn in fns)
+                        shutil.rmtree(fp)
+                except Exception:
+                    pass
+
+    # Clean stale chunk dirs (older than 2 hours)
+    if os.path.isdir(CHUNKS_DIR):
+        for name in os.listdir(CHUNKS_DIR):
+            chunk_dir = os.path.join(CHUNKS_DIR, name)
+            if os.path.isdir(chunk_dir):
+                try:
+                    age = now - os.path.getmtime(chunk_dir)
+                    if age > 7200:  # 2 hours
+                        cleaned += sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(chunk_dir) for fn in fns)
+                        shutil.rmtree(chunk_dir)
+                except Exception:
+                    pass
+
+    if cleaned > 0:
+        print(f"[AUTO-CLEANUP] Freed {cleaned / 1e6:.1f} MB", flush=True)
+    return cleaned
+
+
+def _get_free_space_mb() -> float:
+    """Get free disk space in MB."""
+    try:
+        usage = shutil.disk_usage(_BASE)
+        return usage.free / 1e6
+    except Exception:
+        return 9999  # Assume plenty of space if can't check
 
 ALLOWED_VIDEO_TYPES = {
     "video/mp4", "video/quicktime", "video/x-msvideo",
@@ -87,6 +137,18 @@ async def chunk_init(project_id: str, filename: str = Form(...), file_size: int 
     project = load_project(project_id)
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Auto-cleanup temp files to free space before upload
+    _auto_cleanup()
+
+    # Check if we have enough space (need ~2x file_size for chunks + final file)
+    needed_mb = (file_size * 2.5) / 1e6  # 2.5x for safety margin
+    free_mb = _get_free_space_mb()
+    if free_mb < needed_mb:
+        raise HTTPException(
+            status_code=507,
+            detail=f"Espace disque insuffisant. Besoin de {needed_mb:.0f} Mo, disponible: {free_mb:.0f} Mo. Supprimez d'anciens projets."
+        )
 
     upload_id = str(uuid.uuid4())
     upload_dir = os.path.join(CHUNKS_DIR, upload_id)
@@ -170,9 +232,9 @@ async def chunk_complete(project_id: str, upload_id: str = Form(...)):
                     await out.write(data)
                     file_size += len(data)
 
-    # Clean up chunks
-    import shutil
+    # Clean up chunks immediately to free disk space
     shutil.rmtree(upload_dir, ignore_errors=True)
+    print(f"[UPLOAD] Chunks cleaned for {original_filename}", flush=True)
 
     # Get duration
     try:
