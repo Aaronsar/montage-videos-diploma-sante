@@ -58,6 +58,7 @@ export default function ProjectPage() {
   const [logoFilename, setLogoFilename] = useState<string | null>(null);
   const [logoPosition, setLogoPosition] = useState("bottom-right");
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const prevStatusRef = useRef<string>("");
 
   // ── Fetch project ──
   const fetchProject = useCallback(async () => {
@@ -71,12 +72,18 @@ export default function ProjectPage() {
       setProject(data);
       if (data.brief && !brief) setBrief(data.brief);
 
-      // Auto-advance during processing + when processing completes
+      // Auto-advance step based on status transitions
+      const prev = prevStatusRef.current;
       const s = data.status;
+      prevStatusRef.current = s;
+
+      // During active processing: always force the correct step
       if (s === "transcribing") setStep(1);
       else if (s === "analyzing") setStep(2);
-      else if (s === "review") setStep(3);
-      else if (s === "assembling" || s === "done") setStep(4);
+      else if (s === "assembling") setStep(4);
+      // On completion transitions: advance ONCE then let user navigate freely
+      else if (s === "review" && (prev === "analyzing" || prev === "")) setStep(3);
+      else if (s === "done" && prev === "assembling") setStep(4);
     } catch {}
   }, [id, brief]);
 
