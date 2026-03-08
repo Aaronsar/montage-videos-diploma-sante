@@ -130,7 +130,8 @@ async def cleanup_temp():
 
 @app.post("/cleanup/orphans")
 async def cleanup_orphans():
-    """Delete upload files that don't belong to any existing project."""
+    """Delete upload files that don't belong to any existing project,
+    AND files inside projects that don't match any current rush."""
     import shutil
     from database import list_projects
 
@@ -142,10 +143,25 @@ async def cleanup_orphans():
     if os.path.isdir(uploads_dir):
         for folder in os.listdir(uploads_dir):
             folder_path = os.path.join(uploads_dir, folder)
-            if os.path.isdir(folder_path) and folder not in valid_ids:
-                sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, dn, fns in os.walk(folder_path) for fn in fns)
+            if not os.path.isdir(folder_path):
+                continue
+            if folder not in valid_ids:
+                # Entire project folder is orphaned
+                sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(folder_path) for fn in fns)
                 shutil.rmtree(folder_path)
                 cleaned += sz
+            else:
+                # Project exists — check for orphan files inside (deleted rushes)
+                project = next((p for p in projects if p.id == folder), None)
+                if project:
+                    valid_filenames = {r.filename for r in project.rushes}
+                    for f in os.listdir(folder_path):
+                        fp = os.path.join(folder_path, f)
+                        if os.path.isfile(fp) and f not in valid_filenames:
+                            sz = os.path.getsize(fp)
+                            os.remove(fp)
+                            cleaned += sz
+                            print(f"[ORPHAN] Removed orphan file {f} ({sz/1e6:.1f} MB)", flush=True)
 
     # Also clean orphan outputs
     outputs_dir = "/data/storage/outputs"
@@ -153,7 +169,7 @@ async def cleanup_orphans():
         for folder in os.listdir(outputs_dir):
             folder_path = os.path.join(outputs_dir, folder)
             if os.path.isdir(folder_path) and folder not in valid_ids:
-                sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, dn, fns in os.walk(folder_path) for fn in fns)
+                sz = sum(os.path.getsize(os.path.join(dp, fn)) for dp, _, fns in os.walk(folder_path) for fn in fns)
                 shutil.rmtree(folder_path)
                 cleaned += sz
 
