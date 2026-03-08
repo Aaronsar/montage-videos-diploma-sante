@@ -77,6 +77,21 @@ async def reset_project(project_id: str):
     return project.model_dump()
 
 
+@router.post("/{project_id}/reset-assembly")
+async def reset_assembly(project_id: str):
+    """Reset project to review state (keeps transcription + segments)."""
+    project = load_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    project.status = ProjectStatus.review
+    project.progress = 75
+    project.progress_message = "Prêt pour l'assemblage"
+    project.error_message = None
+    project.outputs = []
+    save_project(project)
+    return project.model_dump()
+
+
 @router.delete("/{project_id}")
 async def delete_project_route(project_id: str):
     """Delete a project."""
